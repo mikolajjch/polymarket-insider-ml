@@ -1,0 +1,16 @@
+# One event slug per line. Comments start with '#'.
+# Get the slug from the Polymarket URL, e.g.
+#   https://polymarket.com/event/will-trump-win-the-2024-us-presidential-election
+#                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+# --- Politics / elections ---
+
+# --- Sports ---
+
+# --- Crypto / financial ---
+
+# --- 'Death markets' / celebrity ---
+
+# --- AI / tech ---
+
+# --- Other ---
