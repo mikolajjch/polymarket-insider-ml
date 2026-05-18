@@ -2,7 +2,6 @@
 pandas>=2.1,<3.0
 numpy>=1.26,<2.1            # numpy 2.1+ dropped Python 3.9 support
 requests>=2.31
-tenacity>=8.2
 
 # ML
 scikit-learn>=1.4,<1.7      # mlxtend 0.24 needs sklearn 1.8+, which needs Python 3.10+

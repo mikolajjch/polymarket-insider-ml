@@ -1,81 +1,62 @@
 """HTTP client for Polymarket's public APIs.
 
-Two endpoints are used:
-    * Gamma API  (https://gamma-api.polymarket.com)  -> event/market metadata
-    * Data API   (https://data-api.polymarket.com)   -> positions, leaderboard
-
-Both are public read-only endpoints and do not require auth.
-
-This module wraps `requests` with:
-    * a single `get_json` helper that raises on non-2xx,
-    * tenacity-based retry with exponential backoff for transient errors,
-    * a configurable polite sleep between calls (rate limiting).
+Two endpoints are used, both public, no auth needed:
+    Gamma API  (https://gamma-api.polymarket.com)  -> events / markets
+    Data API   (https://data-api.polymarket.com)   -> positions / leaderboard
 """
 
-from __future__ import annotations
-
-import logging
 import time
 from typing import Any, Dict, List, Optional
 
 import requests
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
 
 GAMMA_API = "https://gamma-api.polymarket.com"
 DATA_API = "https://data-api.polymarket.com"
 REQUEST_TIMEOUT = 20
 
-# Polite-by-default rate limit. Override via `set_rate_limit_sleep(...)`.
-_RATE_LIMIT_SLEEP = 0.4
-
-logger = logging.getLogger(__name__)
-
-
-def set_rate_limit_sleep(seconds: float) -> None:
-    """Set the global sleep between successful HTTP calls."""
-    global _RATE_LIMIT_SLEEP
-    _RATE_LIMIT_SLEEP = max(0.0, float(seconds))
+# Sleep after every successful request to be a polite API client.
+RATE_LIMIT_SLEEP = 0.4
+MAX_RETRIES = 4
 
 
-class PolymarketAPIError(RuntimeError):
-    """Raised when Polymarket API returns an unexpected response."""
-
-
-@retry(
-    reraise=True,
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=1, min=1, max=20),
-    retry=retry_if_exception_type(
-        (requests.ConnectionError, requests.Timeout, requests.HTTPError)
-    ),
-)
 def get_json(url: str, params: Optional[Dict[str, Any]] = None) -> Any:
-    """GET `url` and return parsed JSON. Retries on transient errors."""
-    response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
-    # Retry on 5xx and 429 — surface 4xx other than 429 immediately.
-    if response.status_code == 429 or response.status_code >= 500:
-        response.raise_for_status()
-    response.raise_for_status()
-    try:
-        payload = response.json()
-    except ValueError as exc:
-        raise PolymarketAPIError(f"Non-JSON response from {url}") from exc
+    """GET url and return parsed JSON.
 
-    if _RATE_LIMIT_SLEEP:
-        time.sleep(_RATE_LIMIT_SLEEP)
-    return payload
+    Retries up to MAX_RETRIES times on connection errors and on 5xx/429
+    responses, with backoff 1s, 2s, 4s, ... 4xx errors (other than 429)
+    are raised immediately because retrying won't help.
+    """
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
+        except (requests.ConnectionError, requests.Timeout):
+            if attempt == MAX_RETRIES - 1:
+                raise
+            time.sleep(2 ** attempt)
+            continue
+
+        status = response.status_code
+        if status == 429 or status >= 500:
+            if attempt == MAX_RETRIES - 1:
+                response.raise_for_status()
+            time.sleep(2 ** attempt)
+            continue
+        response.raise_for_status()
+
+        payload = response.json()
+        if RATE_LIMIT_SLEEP:
+            time.sleep(RATE_LIMIT_SLEEP)
+        return payload
+
+    # We should always return or raise inside the loop; this is a safety net.
+    raise RuntimeError("get_json: exhausted all retries")
 
 
 # ---- Gamma API: events / markets ------------------------------------------
 
 
 def get_event_by_slug(slug: str) -> Dict[str, Any]:
-    """Fetch event metadata by human slug (e.g. 'will-trump-win-2024')."""
+    """Fetch an event by its slug (the part of the URL after /event/)."""
     slug = slug.strip()
     if not slug:
         raise ValueError("Slug cannot be empty.")
@@ -83,7 +64,7 @@ def get_event_by_slug(slug: str) -> Dict[str, Any]:
 
 
 def get_event_by_id(event_id: str) -> Dict[str, Any]:
-    """Fetch event metadata by numeric ID."""
+    """Fetch an event by numeric ID."""
     event_id = str(event_id).strip()
     if not event_id:
         raise ValueError("Event ID cannot be empty.")
@@ -91,12 +72,44 @@ def get_event_by_id(event_id: str) -> Dict[str, Any]:
 
 
 def get_event_id_from_slug(slug: str) -> str:
-    """Convenience: slug -> event ID."""
+    """Slug -> numeric event ID."""
     event = get_event_by_slug(slug)
     event_id = event.get("id")
     if event_id is None:
-        raise PolymarketAPIError(f"No event ID found for slug: {slug}")
+        raise RuntimeError(f"No event ID found for slug: {slug}")
     return str(event_id)
+
+
+def list_events(
+    closed: Optional[bool] = True,
+    archived: Optional[bool] = False,
+    limit: int = 100,
+    offset: int = 0,
+    order: str = "volume",
+    ascending: bool = False,
+) -> List[Dict[str, Any]]:
+    """List events from the Gamma API.
+
+    Defaults pull the top resolved events ordered by volume — useful when
+    you want to seed events_to_scrape.txt without browsing the website.
+    """
+    params: Dict[str, Any] = {
+        "limit": int(limit),
+        "offset": int(offset),
+        "order": order,
+        "ascending": "true" if ascending else "false",
+    }
+    if closed is not None:
+        params["closed"] = "true" if closed else "false"
+    if archived is not None:
+        params["archived"] = "true" if archived else "false"
+
+    data = get_json(f"{GAMMA_API}/events", params=params)
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict) and isinstance(data.get("data"), list):
+        return data["data"]
+    raise RuntimeError(f"Unexpected /events response shape: {type(data).__name__}")
 
 
 # ---- Data API: positions / leaderboard ------------------------------------
@@ -110,10 +123,10 @@ def get_market_positions(
     sort_by: str = "TOTAL_PNL",
     sort_direction: str = "DESC",
 ) -> List[Dict[str, Any]]:
-    """Fetch positions for a single market identified by `condition_id`.
+    """Fetch positions for a market identified by its on-chain conditionId.
 
-    `status="ALL"` returns both open and closed/cashed-out positions —
-    important so we don't miss winners who already redeemed.
+    status='ALL' returns open + closed/cashed-out positions, so we don't
+    miss winners who already redeemed.
     """
     return get_json(
         f"{DATA_API}/v1/market-positions",
@@ -129,7 +142,7 @@ def get_market_positions(
 
 
 def get_user_leaderboard_stats(user: str) -> Dict[str, float]:
-    """Return aggregate volume + PnL for a single wallet from the leaderboard."""
+    """Aggregate lifetime volume + PnL for a wallet from the leaderboard."""
     rows = get_json(
         f"{DATA_API}/v1/leaderboard",
         params={
@@ -141,13 +154,13 @@ def get_user_leaderboard_stats(user: str) -> Dict[str, float]:
         },
     )
 
-    from polymarket_insider.normalize import to_float_or_zero
-
     if isinstance(rows, list) and rows:
         row = rows[0]
+        vol = row.get("vol") or 0
+        pnl = row.get("pnl") or 0
         return {
-            "account_total_traded_volume": to_float_or_zero(row.get("vol")),
-            "account_total_gain_loss": to_float_or_zero(row.get("pnl")),
+            "account_total_traded_volume": float(vol),
+            "account_total_gain_loss": float(pnl),
         }
 
     return {
