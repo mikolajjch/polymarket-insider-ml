@@ -21,6 +21,7 @@ streamlit>=1.32
 # Notebooks
 jupyter>=1.0
 ipykernel>=6.29
+tqdm>=4.66
 
 # Dev (optional)
 pytest>=8.0

@@ -224,6 +224,10 @@ data/external/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/external/.gitkeep
+# Wallet cache holds personally-identifying-ish data (wallet addresses + PnL),
+# don't commit it to a public repo.
+data/external/wallet_cache.json
+data/external/wallet_cache.json.tmp
 reports/*.html
 reports/figures/
 

@@ -1,21 +1,22 @@
 """High-level scraping: events -> positions DataFrame.
 
-This is the layer you'll call from notebooks and scripts. It composes
-the low-level `api` and `normalize` modules into a few task-shaped
-functions:
+The functions here glue together the low-level `api` and `normalize`
+helpers into task-shaped operations you call from notebooks/scripts:
 
     extract_top_positions_for_event   -- one event -> ranked YES/NO holders
     build_positions_dataframe         -- nested dict -> flat DataFrame
     scrape_events                     -- batch many events into one DataFrame
-    enrich_with_account_totals        -- add wallet-level volume/PnL columns
+    enrich_with_account_totals        -- add wallet-level volume/PnL columns,
+                                         with on-disk cache so re-runs are fast
 """
 
-from __future__ import annotations
-
+import json
 import logging
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 import pandas as pd
+from tqdm import tqdm
 
 from polymarket_insider import api
 from polymarket_insider.normalize import (
@@ -26,6 +27,14 @@ from polymarket_insider.normalize import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# Path(__file__) = .../polymarket_insider/scraper.py
+# .parent = polymarket_insider/    .parent.parent = project root
+# This works no matter where Python is launched from (notebook, script, ...).
+DEFAULT_WALLET_CACHE = (
+    Path(__file__).resolve().parent.parent / "data" / "external" / "wallet_cache.json"
+)
 
 
 # ---- Ranking primitives ---------------------------------------------------
@@ -239,39 +248,82 @@ def scrape_events(
 # ---- Wallet-level enrichment ----------------------------------------------
 
 
+def _load_wallet_cache(path: Path) -> Dict[str, Dict[str, float]]:
+    """Read wallet -> stats dict from disk, or {} if file is missing/broken."""
+    if not path.exists():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except json.JSONDecodeError:
+        # File got corrupted somehow — start over rather than crash.
+        return {}
+
+
+def _save_wallet_cache(cache: Dict[str, Dict[str, float]], path: Path) -> None:
+    """Write cache to disk. Uses a temp file + rename so Ctrl+C can't leave
+    a half-written JSON on disk (which would crash the next load)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(cache, f, indent=2)
+    tmp.replace(path)
+
+
 def enrich_with_account_totals(
-    df: pd.DataFrame, verbose: bool = False
+    df: pd.DataFrame,
+    cache_path: Optional[Path] = None,
+    verbose: bool = False,
 ) -> pd.DataFrame:
     """Add `account_total_traded_volume` and `account_total_gain_loss` columns.
 
-    Calls the leaderboard endpoint once per unique `proxyWallet`. Expensive
-    for large frames — usually you want to apply this only after filtering
-    (e.g. to winners) or after a unique-wallet dedup.
+    Each unique wallet's leaderboard stats are cached on disk at
+    `cache_path` (default: data/external/wallet_cache.json). Re-running
+    the notebook only fetches wallets that aren't already in the cache,
+    which makes the second run almost instant.
+
+    The cache is saved every 25 wallets and at the end, so even if you
+    Ctrl+C halfway through, the wallets we already fetched are preserved.
     """
     if df.empty or "proxyWallet" not in df.columns:
         return df
 
-    unique_wallets = [w for w in df["proxyWallet"].dropna().astype(str).unique() if w]
-    totals_by_wallet: Dict[str, Dict[str, float]] = {}
+    cache_path = Path(cache_path) if cache_path else DEFAULT_WALLET_CACHE
+    cache = _load_wallet_cache(cache_path)
 
-    for i, wallet in enumerate(unique_wallets, start=1):
-        if verbose:
-            print(f"Enriching account {i}/{len(unique_wallets)}: {wallet}")
+    unique_wallets = [w for w in df["proxyWallet"].dropna().astype(str).unique() if w]
+    todo = [w for w in unique_wallets if w not in cache]
+
+    if verbose:
+        print(
+            f"{len(unique_wallets)} unique wallets in df, "
+            f"{len(unique_wallets) - len(todo)} already cached, "
+            f"{len(todo)} to fetch."
+        )
+
+    save_every = 25
+    for i, wallet in enumerate(tqdm(todo, desc="Fetching wallets", unit="wallet")):
         try:
-            totals_by_wallet[wallet] = api.get_user_leaderboard_stats(wallet)
+            cache[wallet] = api.get_user_leaderboard_stats(wallet)
         except Exception as exc:
             logger.warning("Leaderboard fetch failed for %s: %s", wallet, exc)
-            totals_by_wallet[wallet] = {
+            cache[wallet] = {
                 "account_total_traded_volume": 0.0,
                 "account_total_gain_loss": 0.0,
             }
+        if (i + 1) % save_every == 0:
+            _save_wallet_cache(cache, cache_path)
+
+    # Final save in case the last batch was smaller than save_every.
+    if todo:
+        _save_wallet_cache(cache, cache_path)
 
     enriched = df.copy()
     enriched["account_total_traded_volume"] = enriched["proxyWallet"].map(
-        lambda w: totals_by_wallet.get(str(w), {}).get("account_total_traded_volume", 0.0)
+        lambda w: cache.get(str(w), {}).get("account_total_traded_volume", 0.0)
     )
     enriched["account_total_gain_loss"] = enriched["proxyWallet"].map(
-        lambda w: totals_by_wallet.get(str(w), {}).get("account_total_gain_loss", 0.0)
+        lambda w: cache.get(str(w), {}).get("account_total_gain_loss", 0.0)
     )
     return enriched
 
