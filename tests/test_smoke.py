@@ -101,6 +101,19 @@ def test_features_and_labels_end_to_end():
                 "account_total_traded_volume": 5_000_000.0,
                 "account_total_gain_loss": 800_000.0,
             },
+            {  # insider-style bet that LOST: behavior-flagged but not labeled
+                "proxyWallet": "0xLOSER",
+                "size": 1000.0,
+                "avgPrice": 0.08,
+                "currPrice": 0.0,
+                "currentValue": 0.0,
+                "cashPnl": -9000.0,
+                "totalBought": 9000.0,
+                "realizedPnl": -9000.0,
+                "totalPnl": -9000.0,
+                "account_total_traded_volume": 10000.0,
+                "account_total_gain_loss": -9000.0,
+            },
         ]
     )
 
@@ -117,10 +130,32 @@ def test_features_and_labels_end_to_end():
     ):
         assert col in df.columns
 
-    # The contrived whale row should hit at least the suspicious threshold.
+    # Row 0: insider-style bet that won  -> labeled suspicious.
+    # Row 1: benign whale                -> not flagged, not suspicious.
+    # Row 2: insider-style bet that lost -> behavior-flagged but NOT suspicious.
     assert df.loc[0, "suspicious"] == 1
     assert df.loc[1, "suspicious"] == 0
+    assert df.loc[2, "suspicious"] == 0
+
+    # The label requires BOTH a behavior flag AND a win: row 2 is flagged on
+    # behavior but lost, so it must not be labeled suspicious.
+    assert df.loc[2, "behavior_flag"] == 1
+    assert df.loc[2, "outcome_won"] == 0
+
+    # Graded score stays in [0, 1]; sub-scores, flags and outcome columns
+    # are all present.
+    assert df["suspicious_score"].between(0.0, 1.0).all()
+    for col in (
+        "score_big_position",
+        "score_contrarian_entry",
+        "rule_small_wallet",
+        "behavior_flag",
+        "outcome_won",
+        "outcome_return_ratio",
+    ):
+        assert col in df.columns
 
     summary = labeling.label_summary(df)
-    assert summary["n"] == 2
+    assert summary["n"] == 3
     assert summary["n_suspicious"] == 1
+    assert summary["n_behavior_flag"] == 2
