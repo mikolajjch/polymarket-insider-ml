@@ -24,36 +24,50 @@ and has useful inline outputs). The final report is Markdown.
 
 ## Phase 2 — Processing & labeling
 
-- [ ] `scripts/02_label_dataset.py` — load latest raw CSV, apply features +
-      heuristic labels, write `data/processed/labeled_positions_*.csv`
-- [ ] Same script exports `data/processed/top50_suspicious.csv` and
-      `bottom50_suspicious.csv` for hand-review
+- [x] `polymarket_insider/labeling.py` — graded behavior score +
+      two-part label (`suspicious = behavior_flag AND outcome_won`),
+      all thresholds in `LABELING_CONFIG`
+- [x] `scripts/02_label_dataset.py` — load latest raw CSV, apply features +
+      labels, write `data/processed/labeled_positions_*.csv`
+- [x] Same script exports `data/processed/gold_set_template.csv`
+      (~100 balanced rows for hand-review; protected against overwrite)
+- [ ] Hand-label the gold set: open `gold_set_template.csv`, fill the
+      `gold_label` column (1 = looks insider-like, 0 = looks normal), save as
+      `gold_set_labeled.csv`. Used in Phase 4 to measure how well the
+      heuristic and models agree with human judgment.
 
 ## Phase 3 — EDA
 
-- [ ] `scripts/03_eda.py` — load processed CSV, write plots to
-      `reports/figures/*.png` and summary tables to `reports/tables/*.csv`
-- [ ] Cover: feature distributions, correlations, class balance,
-      rule-flag co-occurrence
+- [x] `scripts/03_eda.py` — class balance, score distribution, behavior
+      feature distributions, correlation heatmap, rule co-occurrence
+- [x] Outputs in `reports/figures/*.png` and `reports/tables/*.csv`
+- [x] `features.behavior_feature_columns()` — single source of truth for the
+      leak-free feature set used by EDA and modeling
+- [x] Bugfix: `position_concentration` no longer explodes for zero-volume wallets
 
 ## Phase 4 — Modeling
 
 - [ ] `polymarket_insider/modeling.py` — preprocessing pipeline
-      (RobustScaler, GroupKFold by wallet), class-balance helpers
+      (`RobustScaler` + optional `SMOTE`), `GroupKFold` by wallet,
+      cross-validation + metrics helpers, model save/load
 - [ ] `scripts/04_train_baselines.py` — Naive Bayes, kNN, Decision Tree
 - [ ] `scripts/05_train_advanced.py` — Random Forest, XGBoost, MLP, LogReg
 - [ ] `scripts/06_unsupervised_baseline.py` — Isolation Forest comparison
 - [ ] `scripts/07_shap_analysis.py` — feature importance on the best model
 - [ ] `scripts/08_association_rules.py` — mlxtend rules on the flag columns
 - [ ] Persist trained models to `data/processed/models/`
+- [ ] Compare model predictions against the hand-labeled gold set
 - [ ] Unit tests for `modeling.py` under `tests/`
 
 ## Phase 5 — App and report
 
 - [ ] `app/app.py` — Streamlit dashboard: event slug -> wallet table w/ risk score
 - [ ] Wallet inspector view (all positions for one wallet)
+- [ ] Update `notebooks/00_problem_definition.md` to match the final
+      labeling design (it still describes the original 6-rule version)
 - [ ] `reports/REPORT.md` — final report (data, preprocessing, models,
       results, limitations, related work)
 - [ ] Slide deck for defense
-- [ ] Bibliography (5-10 entries; include `pselamy/polymarket-insider-tracker`)
+- [ ] Bibliography (5-10 entries; include Snorkel / weak supervision,
+      Easley & O'Hara PIN, `pselamy/polymarket-insider-tracker`)
 - [ ] Dry-run presentation under 15 min

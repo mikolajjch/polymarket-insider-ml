@@ -42,6 +42,25 @@ def latest_raw_csv():
     return files[-1]
 
 
+def _has_hand_labels(path):
+    """True if the gold set CSV exists and already has non-blank gold_label.
+
+    Empty CSV cells come back as NaN from read_csv, so we explicitly require
+    a value that is both non-null AND non-empty after stripping whitespace.
+    """
+    if not path.exists():
+        return False
+    try:
+        existing = pd.read_csv(path)
+    except Exception:
+        return False
+    if "gold_label" not in existing.columns:
+        return False
+    vals = existing["gold_label"]
+    nonblank = vals.notna() & (vals.astype(str).str.strip() != "")
+    return bool(nonblank.any())
+
+
 def build_gold_set(df, size=GOLD_SET_SIZE, seed=RANDOM_SEED):
     """Return a balanced sample of rows to label by hand.
 
@@ -122,18 +141,23 @@ def main():
     df.to_csv(labeled_path, index=False)
     print("Wrote " + str(labeled_path.relative_to(ROOT)))
 
-    gold = build_gold_set(df)
     gold_path = PROCESSED_DIR / "gold_set_template.csv"
-    gold.to_csv(gold_path, index=False)
-    print(
-        "Wrote {}  ({} rows to hand-label)".format(
-            gold_path.relative_to(ROOT), len(gold)
+    if _has_hand_labels(gold_path):
+        print(
+            "Skipped {}  (already has hand labels -- delete the file if you "
+            "want a fresh template)".format(gold_path.relative_to(ROOT))
         )
-    )
+    else:
+        gold = build_gold_set(df)
+        gold.to_csv(gold_path, index=False)
+        print(
+            "Wrote {}  ({} rows to hand-label)".format(
+                gold_path.relative_to(ROOT), len(gold)
+            )
+        )
 
     print_summary(labeling.label_summary(df))
 
-    # Top 10 most suspicious positions, for a quick eyeball check.
     print()
     print("Top 10 by suspicious_score:")
     cols = [
