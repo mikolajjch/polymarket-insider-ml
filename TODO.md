@@ -47,15 +47,17 @@ and has useful inline outputs). The final report is Markdown.
 
 ## Phase 4 — Modeling
 
-- [ ] `polymarket_insider/modeling.py` — preprocessing pipeline
-      (`RobustScaler` + optional `SMOTE`), `GroupKFold` by wallet,
-      cross-validation + metrics helpers, model save/load
-- [ ] `scripts/04_train_baselines.py` — Naive Bayes, kNN, Decision Tree
+- [x] `polymarket_insider/modeling.py` — preprocessing pipeline
+      (`RobustScaler` + `SMOTE`), `GroupKFold` by wallet,
+      cross-validation + metrics helpers, `save_model` / `load_model`
+- [x] `scripts/04_train_baselines.py` — Naive Bayes, kNN, Decision Tree
+      (best baseline: DT, ROC-AUC 0.97 ± 0.01, F1 0.86 under GroupKFold)
+- [x] Persist trained models to `data/processed/models/*.joblib`
+- [x] Baseline metrics table at `reports/tables/baseline_metrics.csv`
 - [ ] `scripts/05_train_advanced.py` — Random Forest, XGBoost, MLP, LogReg
 - [ ] `scripts/06_unsupervised_baseline.py` — Isolation Forest comparison
 - [ ] `scripts/07_shap_analysis.py` — feature importance on the best model
 - [ ] `scripts/08_association_rules.py` — mlxtend rules on the flag columns
-- [ ] Persist trained models to `data/processed/models/`
 - [ ] Compare model predictions against the hand-labeled gold set
 - [ ] Unit tests for `modeling.py` under `tests/`
 
