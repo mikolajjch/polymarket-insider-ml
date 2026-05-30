@@ -1,0 +1,5 @@
+antecedents,consequents,support,confidence,lift
+outcome_won + rule_big_position + rule_contrarian_entry,suspicious,0.057889976153276866,0.7250257466529351,11.303895006469672
+outcome_won + rule_big_position,suspicious,0.060439108625935364,0.5372807017543859,8.376757197480881
+outcome_won + rule_contrarian_entry,suspicious,0.061508099662856676,0.33082706766917297,5.157933294775401
+rule_big_position + rule_contrarian_entry,suspicious,0.057889976153276866,0.31150442477876106,4.856673474018607

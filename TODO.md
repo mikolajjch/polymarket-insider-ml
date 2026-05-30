@@ -55,11 +55,17 @@ and has useful inline outputs). The final report is Markdown.
 - [x] Persist trained models to `data/processed/models/*.joblib`
 - [x] Baseline metrics table at `reports/tables/baseline_metrics.csv`
 - [ ] `scripts/05_train_advanced.py` — Random Forest, XGBoost, MLP, LogReg
-- [ ] `scripts/06_unsupervised_baseline.py` — Isolation Forest comparison
-- [ ] `scripts/07_shap_analysis.py` — feature importance on the best model
-- [ ] `scripts/08_association_rules.py` — mlxtend rules on the flag columns
-- [ ] Compare model predictions against the hand-labeled gold set
-- [ ] Unit tests for `modeling.py` under `tests/`
+- [x] `scripts/06_unsupervised_baseline.py` — Isolation Forest, 90% total
+      agreement with heuristic, 22% overlap on flagged set (independent
+      anomaly detector confirms part of the heuristic's picks)
+- [x] `scripts/07_shap_analysis.py` — SHAP on XGBoost; top features
+      `totalBought`, `avgPrice`, `very_low_price_entry`, `position_concentration`
+- [x] `scripts/08_association_rules.py` — mlxtend apriori + association_rules
+      on the rule_* flags + label (top rule: `big_position + contrarian_entry +
+      outcome_won -> suspicious` at confidence 72.5%, lift 11.3×)
+- [x] `scripts/09_evaluate_vs_gold.py` — predictions vs the hand-labeled gold
+      set; XGBoost / RF / heuristic tie at F1 0.80, accuracy 83%
+- [ ] (optional, nice-to-have) Unit tests for `modeling.py` under `tests/`
 
 ## Phase 5 — App and report
 
