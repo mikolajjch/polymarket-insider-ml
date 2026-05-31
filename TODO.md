@@ -69,8 +69,11 @@ and has useful inline outputs). The final report is Markdown.
 
 ## Phase 5 — App and report
 
-- [ ] `app/app.py` — Streamlit dashboard: event slug -> wallet table w/ risk score
-- [ ] Wallet inspector view (all positions for one wallet)
+- [x] `app/app.py` — Streamlit dashboard with three views:
+      - Event explorer: slug -> top positions ranked by XGBoost risk score
+      - Wallet inspector: all positions + risk profile for one wallet
+      - Model overview: ranking table, SHAP importance, association rules,
+        gold-set evaluation
 - [ ] Update `notebooks/00_problem_definition.md` to match the final
       labeling design (it still describes the original 6-rule version)
 - [ ] `reports/REPORT.md` — final report (data, preprocessing, models,
